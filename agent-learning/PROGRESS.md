@@ -280,3 +280,29 @@ learner as the part that turns a demo into something safe to leave running unatt
   typically implemented as LangGraph state machines in practice -- teach the graph
   mechanics first, then the pattern vocabulary maps onto concrete graph shapes instead
   of staying abstract.
+
+- 2026-09-05 — CORRECTION via /agentic-ai-coach skill verification. I had written a
+  non-canonical CURRICULUM.md and jumped straight to "LangGraph next," skipping the
+  skill's actual Module 6/7/8 done-when bars, which are NOT met yet. Deleted that file.
+  Canonical curriculum lives in the skill's curriculum.md, not a project file. Verified
+  gaps against it:
+  - Module 3 (context): never actually measured tokens/cost, toy example showed no
+    quality difference -- done-when NOT met, but not re-opening given compressed scope.
+  - Module 5 (MCP): only called own server from own test client, never from Claude Code
+    or a separate agent -- done-when NOT met.
+  - Module 6 (evals): 5 cases, skill wants 20, and have never actually refused to ship a
+    change because the eval dropped -- done-when NOT met.
+  - Module 7 (hardening): have latency tracing + local kill switch only. Missing:
+    cost/token tracking per run, guardrails, PII handling, prompt-injection defense,
+    approval gate on destructive actions -- done-when NOT met.
+  - Module 8 (product/shipping): no real external user has completed a task with the
+    capstone -- done-when NOT met.
+  - Module 12 (LangGraph) is explicitly gated behind Module 8 shipping per the skill.
+    Not unlocked yet -- LangGraph work is ON HOLD until 6/7/8 close.
+  - OODA/BDI/reactive/scheduler pattern vocabulary flagged earlier is NOT part of the
+    skill's canonical curriculum -- parked as optional enrichment, not a real module.
+
+  NEXT (in order, per skill): (1) grow eval suite to ~20 cases + actually block one
+  shipped change on a dropped pass rate, (2) add per-run cost/token tracking + one
+  approval gate on a destructive-style tool call, (3) get one real external user to
+  complete a task with the capstone. Only then does Module 12 unlock.
