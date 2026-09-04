@@ -344,3 +344,81 @@ learner as the part that turns a demo into something safe to leave running unatt
   reports token counts themselves. Break-it question asked: "50 turns, last tool result
   correct, repeated same call 5 times -- name the two most likely causes." Awaiting
   their answer + their code.
+
+---
+
+## 2026-09-05 — Module 3 COMPLETE (learner-written) + CONCEPT-MAP.md
+
+**Read all 24 skill files in full** and wrote `agent-learning/CONCEPT-MAP.md` — a
+19-section reference covering every concept in the curriculum with an honest status
+table. Learner asked for this explicitly. Cost a session, bought a durable reference.
+
+### Module 3 — The loop, deeply. DONE. Learner wrote every line.
+
+Teaching mode: line-by-line, escalation ladder rungs 1–3 only (never pasted a fix).
+
+**Discovery task (learner ran it):** printed the raw Ollama response object and
+identified `done_reason`, `prompt_eval_count`, `eval_count` unaided.
+
+**Comprehension gate — cost asymmetry.** Asked which token count grows across turns.
+Learner said "bigger and bigger" for both. Corrected: `prompt_eval_count` is quadratic
+(history re-sent every turn), `eval_count` stays flat (the reply doesn't get longer
+because the conversation did). This is why input tokens are where the money goes and
+why prompt caching (M5) is the biggest lever.
+
+**Their build** — `math_worker` in `step4_orchestrator.py`:
+- 3 of 4 termination conditions (no-tool-wanted, max_iterations, token budget)
+- Token counter: `prompt_eval_count + eval_count` accumulated per turn
+- Budget check placed BEFORE the model call — learner's own decision, correct one
+  (prevents the expensive turn rather than noticing it after paying)
+- Checkpoint dict on both give-up paths: status, messages, tokens_used, step
+- Off-by-one fixed on their own: `step` at the budget check = completed steps;
+  `step + 1` after the loop = completed steps. Consistent semantics, reasoned unaided.
+- Caller unwraps the dict to a string, chosen over "always return a dict", so the
+  existing eval contract stayed intact.
+
+**Errors they made and fixed themselves:** `response["eval_count=8"]` (copied the key
+*and* its value out of printed output); an indentation error that stopped the file
+parsing.
+
+**Verified by running:**
+```
+normal:            128*37 -> 4736, routing correct on all 3 cases
+max_tokens=1:      {'status':'hit_max_tokens','messages':3,'tokens_used':192,'step':1}
+```
+First real termination condition they have ever seen fire.
+
+**Measured baseline: 192 tokens for one turn on a trivial math question.**
+
+### Two limitations surfaced, both taught rather than hidden
+
+1. **Turn one is always free.** The budget check sits at the top of the loop, so
+   `total_used` is 0 on the first pass and the first model call can never be blocked —
+   at any `max_tokens`. Found empirically: `max_tokens=200` did not fire, `max_tokens=1`
+   did. Checking after the call has the mirror flaw (always one turn over). Real fix is
+   pre-call estimation → M5.
+2. **The checkpoint is not resumable.** `math_worker` builds a correct payload; the
+   orchestrator flattens it to a string and drops `messages`. Learner has the payload,
+   not the persistence. Recorded as a known limitation, not as working resumability.
+   Real checkpointer arrives in M11.
+
+**Also taught:** budgets that reset on restart stop being budgets. Resume three times
+under a 4,000-token cap and you spend 12,000. Same for `max_iterations` — resuming
+disarms the infinite-loop guard.
+
+**Contract change broke something quietly** — `step5_eval.py:21` uses
+`expected_answer in answer`, which checks *keys* on a dict and fails silently rather
+than crashing. Learner avoided it by unwrapping at the caller. This is the concrete
+argument for evals in CI: a return-type change is a code change.
+
+### Still open
+- Break-it question NOT answered: "50 turns, last tool result correct, repeated the
+  same call 5 times — name the two most likely causes." Learner gave cause #1
+  (tool result never appended). Cause #2 still owed. Do not mark M3's break-it ✓.
+- Compaction (M3's other half) not built — no `compact_if_needed`, no summarise
+  prompt with preserve/drop instructions.
+- Module note `notes/03-the-loop-deeply.md` still to write.
+
+### Next
+M3 break-it #2, then compaction, then M5 (context budgeting + prompt caching) — M5 is
+where the 192-token baseline and the quadratic-input finding both get acted on.

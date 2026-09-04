@@ -37,19 +37,24 @@ MATH_TOOLS = [{
     },
 }]
 
-def math_worker(question, max_iterations=5):
+def math_worker(question, max_iterations=5, max_tokens=4000):
     """Isolated agent: only sees the math question, only has the calculator tool."""
     messages = [{"role": "user", "content": question}]
-    for _ in range(max_iterations):
+    total_used = 0
+    step = 0
+    for step in range(max_iterations):
+        if total_used >= max_tokens:
+            return {"status": "hit_max_tokens", "messages": messages, "tokens_used": total_used, "step": step}
         response = ollama.chat(model=MODEL, messages=messages, tools=MATH_TOOLS)
         msg = response["message"]
+        total_used += response["prompt_eval_count"] + response["eval_count"]
         if not msg.get("tool_calls"):
             return msg["content"]
         messages.append(msg)
         for call in msg["tool_calls"]:
             result = calculator(call["function"]["arguments"]["expression"])
             messages.append({"role": "tool", "content": result})
-    return "math worker: hit max_iterations"
+    return {"status": "hit_max_iterations", "messages": messages, "tokens_used": total_used, "step": step + 1}
 
 # ---------- Writing worker (no tools, just prose) ----------
 
@@ -115,7 +120,10 @@ def orchestrator(question, max_routing_attempts=2, extra_context_by_worker=None)
     worker_input = question if not extra_context else f"{extra_context}\n\n{question}"
 
     if worker == "math":
-        return math_worker(worker_input), worker
+        result = math_worker(worker_input)
+        if isinstance(result, dict):
+            result = f"[incomplete: {result['status']} after step {result['step']}, {result['tokens_used']} tokens used]"
+        return result, worker
     elif worker == "writing":
         return writing_worker(worker_input), worker
     else:
