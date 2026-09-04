@@ -260,3 +260,23 @@ learner as the part that turns a demo into something safe to leave running unatt
   parallel graph edges + reduce/merge node), not retrofitted into the current sequential
   step4_orchestrator.py. Also still pending from earlier: MCP gateway (multiple MCP
   servers + tool-list aggregator), flagged 2026-09-04 in the MCP mechanics session above.
+
+- 2026-09-05 — Pushed full repo to GitHub (public):
+  https://github.com/gowtham16-bhu/agentic-ai-from-scratch -- added root README.md
+  (setup/run instructions, concepts table, architecture diagram, "what's deliberately
+  not here" section written for an outside/interviewer reader) and .gitignore
+  (venv/__pycache__ excluded). Learner chose LangGraph as next module.
+
+  FLAGGED FOR FUTURE CURRICULUM: agentic design-pattern vocabulary -- learner asked
+  about OODA loop (Observe-Orient-Decide-Act, continuous perceive/act cycle -- formalizes
+  what step1_loop.py already does but framed around an environment, not one-shot Q&A),
+  goal-oriented/planning agents (BDI -- belief-desire-intention -- persistent goal,
+  decomposes into sub-tasks, keeps working until goal state satisfied, vs current
+  workers which just answer one question and stop), reactive agents (pure
+  stimulus->response, no persistent goal -- writing_worker already fits this), and
+  scheduler/trigger-driven agents (cron/event/queue triggered instead of human-turn
+  triggered -- ties into existing kill-switch/tracing hardening in step6_hardened.py).
+  Agreed placement: after LangGraph module, since goal-oriented/planning patterns are
+  typically implemented as LangGraph state machines in practice -- teach the graph
+  mechanics first, then the pattern vocabulary maps onto concrete graph shapes instead
+  of staying abstract.
