@@ -1,0 +1,11 @@
+{"timestamp": "2026-09-04 21:56:56", "question": "What is 128 * 37?", "worker": "math", "answer": "The result of 128 multiplied by 37 is 4736.", "latency_seconds": 4.7}
+{"timestamp": "2026-09-04 21:56:57", "question": "Write a one-sentence tagline for a coffee shop.", "worker": "writing", "answer": "\"Wake Up to the Moment\"", "latency_seconds": 0.75}
+{"timestamp": "2026-09-04 21:58:27", "question": "What is 128 * 37?", "worker": "math", "answer": "The result of 128 multiplied by 37 is 4736.", "latency_seconds": 1.49}
+{"timestamp": "2026-09-04 21:58:28", "question": "Write a one-sentence tagline for a coffee shop.", "worker": "writing", "answer": "\"Fuel your day, one cup at a time.\"", "latency_seconds": 0.68}
+{"timestamp": "2026-09-04 22:05:05", "question": "My favorite number is 7. What is 7 * 8?", "worker": "math", "answer": "The result of multiplying 7 by 8 is 56.", "latency_seconds": 4.2}
+{"timestamp": "2026-09-04 22:05:06", "question": "(You remember this from before:\nQ: My favorite number is 7. What is 7 * 8?\nA: The result of multiplying 7 by 8 is 56.\n)\n\nNew question: What is my favorite number times 10?", "worker": "writing", "answer": "To find the result of multiplying your favorite number (7) by 10, simply multiply 7 by 10: 7 * 10 = 70.", "latency_seconds": 1.61}
+{"timestamp": "2026-09-04 22:11:14", "question": "My favorite number is 7. What is 7 * 8?", "worker": "math", "answer": "The result of 7 multiplied by 8 is 56.", "latency_seconds": 4.29}
+{"timestamp": "2026-09-04 22:11:16", "question": "What is my favorite number times 10?", "worker": "math", "answer": "The result of your favorite number (7) multiplied by 10 is 70.", "latency_seconds": 1.65}
+{"timestamp": "2026-09-04 22:19:26", "question": "My favorite number is 7. What is 7 * 8?", "worker": "math", "answer": "The result of 7 * 8 is 56.", "latency_seconds": 5.0}
+{"timestamp": "2026-09-04 22:19:26", "question": "Write a one-word slogan for a bakery.", "worker": "writing", "answer": "Sweetness.", "latency_seconds": 0.66}
+{"timestamp": "2026-09-04 22:19:28", "question": "What is my favorite number times 10?", "worker": "math", "answer": "The result of your favorite number (7) times 10 is 70.", "latency_seconds": 1.61}
