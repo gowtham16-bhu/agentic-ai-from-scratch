@@ -306,3 +306,41 @@ learner as the part that turns a demo into something safe to leave running unatt
   shipped change on a dropped pass rate, (2) add per-run cost/token tracking + one
   approval gate on a destructive-style tool call, (3) get one real external user to
   complete a task with the capstone. Only then does Module 12 unlock.
+
+- 2026-09-05 — SKILL UPGRADED (rewritten, 24 modules M0-M23 + 7 projects P1-P7, plus
+  ~20 reference files that did not exist in the old install: patterns.md, production.md,
+  scaling.md, runtime-architecture.md, saas-platform.md, agent-security.md,
+  langgraph.md, python-primer.md, decisions.md, coverage.md, projects.md,
+  long-documents.md, multimodal.md, personalization.md, interfaces.md,
+  improvement.md, build-in-public.md, templates/).
+
+  CRITICAL PROCESS CORRECTION: the new skill's top rule is CODE OWNERSHIP -- the LEARNER
+  writes the code, the tutor does not. I have violated this for every module so far: I
+  wrote step0-step7, both MCP servers, both MCP clients, the README, CAPSTONE.md. Learner
+  has artifacts but did not build them, which is exactly why they reported the material
+  feeling like "school book examples" -- they were reading, not writing. From here:
+  provide design, function shape with `...` bodies, ONE reference example per NEW concept,
+  and review. Use the 6-rung escalation ladder; rung 6 (giving the block) requires
+  evidence of attempt. Log every rung-5/rung-6 escalation here.
+
+  Re-mapped progress onto the new 24-module curriculum:
+  - M1 loop by hand: done (tutor-written)
+  - M2 tool design: done (learner drove the error-message experiment themselves)
+  - M3 the loop deeply: NOT STARTED <- current module
+  - M4 memory: partial (episodic only; curriculum wants 4 memory types + bi-temporal)
+  - M5 context + caching: NOT STARTED (no prompt caching at all -- biggest cost lever)
+  - M8 evals + CI: partial (5 cases, no CI)
+  - M9 production hardening: partial (latency trace + kill switch; no token budget,
+    no guardrails, no approval gate)
+  - M10 orchestration + isolation: partial (shape only; no return contract, no cost
+    measurement, no hallucination-cascade handling)
+  - M14 MCP: partial (server built, no gateway/registry/A2A)
+  - M6, M7, M11-M13, M15-M23: untouched
+
+  Started M3. Prevents: agent works at 5 turns, silently degrades at 20. Taught the four
+  termination conditions (natural finish / no tool wanted / max_iterations / token
+  budget) -- learner's math_worker currently has only max_iterations. Assigned as THEIR
+  build: add all four + a resumable checkpoint to math_worker, and find where Ollama
+  reports token counts themselves. Break-it question asked: "50 turns, last tool result
+  correct, repeated same call 5 times -- name the two most likely causes." Awaiting
+  their answer + their code.
