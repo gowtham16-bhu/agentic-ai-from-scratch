@@ -53,7 +53,7 @@ def math_worker(question, max_iterations=5, max_tokens=4000):
         messages.append(msg)
         for call in msg["tool_calls"]:
             result = calculator(call["function"]["arguments"]["expression"])
-            messages.append({"role": "tool", "content": result})
+            messages.append({"role": "tool", "content": " question is answered "+result })
     return {"status": "hit_max_iterations", "messages": messages, "tokens_used": total_used, "step": step + 1}
 
 # ---------- Writing worker (no tools, just prose) ----------

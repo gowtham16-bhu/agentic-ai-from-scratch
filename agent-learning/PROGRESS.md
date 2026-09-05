@@ -422,3 +422,230 @@ argument for evals in CI: a return-type change is a code change.
 ### Next
 M3 break-it #2, then compaction, then M5 (context budgeting + prompt caching) — M5 is
 where the 192-token baseline and the quadratic-input finding both get acted on.
+
+---
+
+## 2026-09-05 — ROADMAP DECISION: compress raw-code stretch, LangGraph becomes the
+build vehicle from M11 onward
+
+Learner pushed back on raw-code-through-M10 pace, worried about (a) losing time,
+(b) raw-code skill not transferring to other providers (Gemini named specifically),
+(c) wanting to learn more concepts per hour via framework abstraction. Pushed back
+in turn: raw-code IS provider-agnostic (shape transfers, only field names differ,
+already proven once when learner switched Anthropic->Ollama), and framework-first
+means debugging LangGraph's parallel-write reducer bug (named in curriculum M11) with
+no mental model of what a reducer/checkpointer even does. Learner accepted the
+compromise.
+
+AGREED PLAN (supersedes "raw code through M10"):
+1. Close M3's still-open break-it gate (learner owes: point at the line in their loop,
+   name the fix for repeated-tool-call-after-correct-result).
+2. Finish M9 hardening basics (mostly already built: kill switch + tracing exist in
+   step6_hardened.py) -- fast, not a full raw module.
+3. M8 evals stay incremental (grow the 5 cases as we go), not a full standalone
+   raw module, not deferred to the very end either -- learner's "move evals last"
+   suggestion was explicitly talked out of, on the grounds that the M3 session's own
+   silent-contract-break bug (dict vs string, step5_eval.py:21 `in` check) is the
+   exact failure evals-in-CI prevents.
+4. SKIP M4 (memory), M5 (context/caching), M6 (RAG), M7 (multimodal RAG) as
+   standalone RAW modules -- their concepts get folded into LangGraph builds
+   instead (state schema = memory, message trimming = context engineering, etc.)
+   rather than hand-built separately first. This is a real compromise: those
+   modules' "done when" bars from curriculum.md will NOT be met in raw form.
+5. From M11 onward: LangGraph is the BUILD VEHICLE for every module that produces
+   code -- M11, M12, M13, M15, M16, M17, M20, M21, M22, M23. Explicitly NOT
+   LangGraph: M14 (MCP is a protocol, not a graph shape) and M19 (writing, no code).
+   Teaching method for each new LangGraph abstraction: point at the raw concept the
+   learner already built or almost built (e.g. checkpoint dict -> LangGraph
+   checkpointer) BEFORE showing the framework API, so abstraction maps onto felt
+   pain rather than being memorized cold.
+
+RISK FLAGGED TO LEARNER: M4-M7's curriculum done-when bars are being skipped in raw
+form. If a real gap surfaces later (e.g. genuine need for vector RAG at scale), may
+need to circle back to M6/M7 properly rather than assuming the LangGraph-wrapped
+version taught it deeply enough.
+
+NEXT: M3 break-it gate (owed), then M9 quick close, then M11 LangGraph starts.
+
+---
+
+## 2026-09-05 — REVERTED the LangGraph-skip compromise; back to canonical order
+
+Learner reconsidered ("I disturbed the curriculum") and asked to go back to the
+original sequence: raw code module-by-module (M4->M5->M6->M7->M8->M9->M10->M11),
+each module's real done-when bar met, nothing folded into LangGraph early. The
+skip-compromise logged just above is SUPERSEDED -- treat as abandoned, not active.
+
+### M3 break-it gate: CLOSED (properly this time)
+Learner answered cause #2 unprompted and correctly: bare tool result content
+(`{"role":"tool","content":"4736"}`) carries no closure signal, so the model
+can't distinguish "done" from "here's a fact, continue." Learner then fixed
+their own code (step4_orchestrator.py line 56): tool message content changed to
+prepend "question is answered " before the result. Verified it runs correctly.
+One nit unresolved (their own choice to move on): `f" question is answered "+result`
+mixes an unnecessary f-string with `+` concat -- pointed out, not force-fixed.
+Verification gap logged honestly: never actually tested with a question forcing
+2+ tool calls (their calculator handles compound expressions like `(1+2)*5` in
+ONE call, so a real multi-step test needs sequential dependency, e.g. "128*37,
+then subtract 50 from that" -- parked as an example, not run).
+
+### M4 (memory systems): design phase substantially done, code exercise NOT done
+Taught: four memory types, bi-temporal two-axis distinction (valid_from/valid_to
+vs recorded_at), event-triggered invalidation as a third pattern (product catalog
+updates on change-event, not on a clock) alongside time-based expiry (promotions).
+
+Learner-driven work, not tutor-answered:
+- Classified own project correctly: only episodic needed (no semantic/procedural
+  use case exists yet) -- applied the curriculum's own decision framework unprompted.
+- Ecommerce design exercise (curriculum exercise 3), self-corrected after one
+  nudge: initially swapped episodic/semantic labels (called orders "semantic" via
+  a "changes frequently" heuristic, called static profile "episodic") -- corrected
+  to the actual definition (event-with-timestamp vs standing-fact) after being
+  pointed back at the definition, not told the answer.
+- Global vs per-customer split: correctly separated product catalog (global,
+  event-triggered invalidation) from promotions (global, time-based valid_to) --
+  a distinction I hadn't explicitly taught yet, learner generalized it themselves.
+- Bi-temporal worked example (5-day reporting lag scenario): got it BACKWARDS
+  first (claimed only episodic needs valid_to, semantic doesn't) -- corrected via
+  pointing back at the original Acme Corp example, which is semantic and is
+  exactly what needed valid_to. Then walked through two records by hand:
+    Record 1 (enterprise): valid_from=Jan1, valid_to=Mar15, recorded_at=Mar20 --
+    got fully correct on 2nd attempt, including recognizing recorded_at != valid_to
+    because of the stated 5-day lag (this was the actual point of the exercise).
+    Record 2 (basic): only got valid_from=Mar15 before asking to stop. valid_to
+    (should be null/open, no end event yet) and recorded_at (should be Mar20, same
+    webhook as record 1) were stated BY TUTOR, not derived by learner -- logged
+    as incomplete, not as a pass.
+
+NOT done from M4's curriculum: exercise 1 (extend actual code, prove episodic
+memory works across two runs with the second run referencing a decision from the
+first -- step7_memory.py's notes_*.txt likely already satisfies this in spirit but
+was never re-verified against this specific bar), exercise 2 (64K-token overflow
+branch -- correctly not applicable yet, corpus is tiny, skip is deliberate not lazy).
+
+STATUS: M4 design-level done-when items mostly met via learner's own reasoning.
+Code-level done-when (exercise 1) still open. Not blocking -- learner asked to
+move to next module; logged as an open item to return to if a real multi-session
+memory need arises, rather than silently marking M4 100% complete.
+
+NEXT: M5 (context engineering and caching) -- canonical curriculum order.
+
+---
+
+## 2026-09-05 — M5 (context engineering and caching) DONE. New artifact:
+step8_context_budget.py (deliberately a NEW domain -- ecommerce support chat,
+not math/writing workers again, per learner's explicit request to stop
+overloading the same two examples).
+
+Flagged upfront: learner is on local Ollama, not a hosted API, so the curriculum's
+`cache_read_input_tokens` metric does not exist here -- no real cache hit rate to
+read. Substituted: the underlying mechanism (KV-cache reuse for repeated prefixes)
+still applies locally, evidenced by the earlier-observed 4.7s->1.49s latency drop
+in M9's trace log -- used that as the concrete anchor instead of a billing number.
+
+Learner wrote the code end to end (tutor gave only the skeleton + `...` gaps).
+Real bugs learner hit and fixed across several rounds, each caught by pointing at
+the line, not by a pasted fix:
+- `"c1100k_base"` typo (digit 1 vs letter l) in tiktoken.get_encoding -- self-fixed.
+- `role: "system"` used for the customer's own turns -- self-fixed to "user".
+- `messages = [...]` (assignment, wiping history) instead of `.append(...)` on the
+  assistant-reply line -- this one mattered most: it silently reset context to
+  size 1 every turn, defeating the entire exercise. Self-fixed after being asked
+  to trace what `messages` contains turn 2 onward.
+- `context_report()` called but return value discarded (no print) -- exercise
+  produced zero visible output despite "working" code. Self-fixed twice (function
+  signature changed too, see below).
+- Double-counting the system prompt: learner's first context_report(system, history)
+  signature counted the system prompt separately AND inside history (since history
+  already contained the system message at index 0). Learner independently solved
+  this by simplifying to context_report(history) only, dropping the separate
+  system arg -- valid fix, correctly reasoned, though it gave up the per-part
+  breakdown (system vs history) the original curriculum wanted. Accepted as a
+  reasonable trade-off, not pushed back on.
+- Off-by-one TIMING bug: context_report(messages) was called BEFORE the assistant
+  reply was appended, so each printed "context so far" number was missing the
+  reply that had just been printed above it. Learner correctly diagnosed after
+  being walked through the four-line execution order and fixed by moving the
+  append before the report call.
+
+Verified by running -- two real number sets, compared directly:
+  before timing fix: 17, 105, 235, 338 (missing current turn's own reply)
+  after timing fix:  64, 182, 267, 319 (correct, includes own reply each time)
+Also used to teach unprompted-growth: increments shrink here (+118,+85,+52)
+because later replies happened to be shorter -- NOT due to caching, since nothing
+is ever removed from `messages`. Explicit point made: this list only ever grows,
+by design, in the current architecture; that's the concrete cost M5 exists to
+surface, not an abstract warning.
+
+Cache-ordering concept: taught via a timestamp-injected-at-front thought experiment
+(does NOT require the learner's own code, since Ollama has no real cache metric).
+Learner correctly concluded the cache becomes useless if the frontmost content
+changes every call. Learner then asked a genuinely good unprompted question:
+"how can a stateless API have a cache" -- resolved via the correctness-vs-cost
+distinction (statelessness = correctness never depends on the cache; caching = an
+invisible speed/cost optimization underneath that contract). Verified understanding
+with a follow-up check (cache server crashes -> slower/costlier, not broken) --
+learner answered correctly and specifically, not just "yes I get it."
+
+Break-it question (curriculum's exact scenario, "cache hit rate 12%, name three
+things to check") -- three causes covered:
+1. timestamp/request-ID near the front of the prompt -- learner derived this
+   correctly, unprompted, connecting back to the earlier timestamp example.
+2. non-deterministic dict/JSON serialization (missing sort_keys=True) -- learner's
+   first answer ("some pythonic way of handling") was vague; given the concrete
+   example (same tool dict, two different key orders, same meaning, different
+   cache-relevant text) and it landed.
+3. dynamic per-request tool-list pruning -- learner got this BACKWARDS first
+   ("sending different tool lists is fine, nothing we can do") -- corrected
+   directly: pruning tools per-request fragments the cache into many small
+   never-reused entries; correct practice is send the FULL stable tool list every
+   time and let the model ignore irrelevant tools. Learner then answered a direct
+   check question correctly ("send everything") -- gate passed on retry, not on
+   first attempt, logged honestly.
+
+STATUS: M5 done -- context budgeting built and verified with two real before/after
+number sets, cache-ordering rule understood and correctly re-derived on a check
+question, break-it question closed (one cause self-corrected after being wrong
+first).
+
+NEXT: M6 (RAG, properly -- text). No RAG use case exists in the project yet
+(explicitly true since M4 -- learner correctly said "no semantic/procedural
+store needed" for their design). Flag to learner at start of M6: may need to
+either invent a toy corpus to learn the mechanics, or defer M6/M7 until a real
+document/knowledge need shows up in a later project. Ask before proceeding.
+
+CORRECTION (same session, tutor misread learner's intent): learner did NOT mean
+"defer M6/M7 indefinitely" -- learner meant "don't build a fake/toy corpus just to
+check a box, build it around a REAL use case." Tutor incorrectly logged this as a
+deferral. Corrected: M6/M7 are NOT deferred. A genuine use case was found in the
+learner's own existing project instead of inventing one: step8_context_budget.py's
+support_chat already showed the model INVENTING a return policy from its own
+training data when asked "What's your return policy?" -- a real hallucination risk,
+not a toy problem. M6 will build real retrieval over an actual (small) policy
+document set so that question is answered from a real source instead of guessed.
+
+Learner also asked whether M5's caching covered transformer-internals-level
+KV-cache mechanics -- clarified: M5 covered the externally observable effect
+(latency drop, cache-ordering rules) only; actual attention/KV-cache internals
+live in production.md's architect-level material, separate from the numbered
+module track, and not required to use caching correctly.
+
+NEXT (canonical order, skipping deferred M6/M7): M8 -- Evals and CI.
+
+FINAL DECISION on M8 ordering (after one false start earlier where learner asked
+this then reverted to canonical order): M8 is explicitly PUSHED TO THE END of the
+24-module sequence, done last, right before M23 capstone. This is a deliberate
+override of canonical order, not a slip -- confirmed twice by learner.
+
+RISK RESTATED (was flagged when first proposed, still true): M11 (LangGraph) is
+canonically gated behind M8 in this skill's curriculum. With M8 last, either that
+gate is ignored (LangGraph work happens with no CI safety net under it) or M11
+also needs to slide toward the end. Not resolving this now -- will need a decision
+when M11 is reached. Also restated: learner's own M3 session already produced the
+exact silent-failure bug (dict vs string, step5_eval.py `in` check) that eval-in-CI
+exists to catch -- the existing 5 manual eval cases stay as a safety net in the
+meantime, just not formalized into CI until M8's slot at the end.
+
+NEXT: M9 -- Production hardening (mostly already built: kill switch + tracing
+exist in step6_hardened.py; real gaps are an approval gate and malformed
+tool-output handling -- identified earlier, not yet built).
