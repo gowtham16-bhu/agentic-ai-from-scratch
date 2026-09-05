@@ -649,3 +649,102 @@ meantime, just not formalized into CI until M8's slot at the end.
 NEXT: M9 -- Production hardening (mostly already built: kill switch + tracing
 exist in step6_hardened.py; real gaps are an approval gate and malformed
 tool-output handling -- identified earlier, not yet built).
+
+- 2026-09-05 -- CORRECTION LOGGED: tutor skipped straight to M9 without checking
+  M6/M7 (RAG) had actually been resumed, even though only M8 was ever agreed to
+  move. Learner called this out directly ("I only asked to move eval, you moved
+  out all the concept in middle"). Went back to M6/M7 per learner's explicit
+  choice. Lesson for future sessions: do not reorder or skip modules beyond
+  what was explicitly agreed, even under the excuse of "logical next step."
+
+  M6/M7 (RAG, real use case) DONE. Real bug motivating it: step8_context_budget.py's
+  support_chat() previously invented a full return policy (fake 30-day window,
+  fake link) when asked "What's your return policy?" with zero grounding.
+
+  Built in stages, learner wrote the code at each stage:
+  1. Naive grounding -- read store_policy.txt (learner authored the real numbers:
+     14-day return, 60-day damaged-item window), inject into system prompt.
+     Learner correctly reasoned BEFORE being told: a single small doc needs no
+     embeddings, just inject the whole thing -- embeddings only earn their cost
+     once the corpus doesn't fit in context. This is the actual anti-pattern
+     ("RAG bolted on when data fits in context") self-derived, not lectured.
+  2. Added shipping_policy.txt and warranty_policy.txt (real docs, not toy/fake
+     busywork -- learner explicitly chose this over deferring, per feedback
+     logged elsewhere about not building fake corpora just to check a box).
+  3. Built real embedding retrieval: cosine_similarity() and retrieve() in
+     step8_context_budget.py, using ollama.embed(model="nomic-embed-text").
+     Learner wrote both functions correctly on the first pass. Needed
+     line-by-line explanation of: with-open file reading, dict-of-files
+     loading pattern, and max(iterable, key=lambda...) -- specifically
+     struggled with "how does max know to return the key, not the value the
+     lambda computed" -- resolved with a small non-dict example (max(words,
+     key=lambda w: len(w)) -> "elephant", not 8) before it landed. Also asked
+     whether lambda bodies can themselves iterate -- correctly answered: yes
+     via comprehensions/nested calls (single expression), no via multi-line
+     statements (for/if/assignment) -- not needed for their actual code, but
+     understood as a general rule.
+  4. One indentation bug (message-building line over-indented after moving it
+     inside the per-turn loop) -- pointed at the line, learner fixed it
+     unaided.
+  5. Verified with two real queries against the 3-doc corpus:
+     - "What's your return policy?" -> retrieved store_policy.txt (score 0.695),
+       correct grounded answer (14-day, 60-day, store-credit-instant numbers
+       all correct, matching the file).
+     - "Can I get a warranty repair on a shirt that arrived damaged?" ->
+       retrieved warranty_policy.txt ONLY (score 0.716). Break-it result,
+       found by the learner unprompted from the actual output (not shown to
+       them in advance): (a) top-1 retrieval silently dropped
+       store_policy.txt's also-relevant 60-day damaged-item return option --
+       real information loss from hardcoding k=1; (b) the model INVENTED "send
+       a clear photo of the damage" -- not present anywhere in
+       warranty_policy.txt. Learner correctly identified this as the model
+       going outside the provided context on its own, unprompted -- proof RAG
+       reduces but does not eliminate hallucination.
+
+  PRODUCTION GAPS IDENTIFIED, NOT YET FIXED (flagged, logged so they aren't
+  lost): (1) retrieve() re-embeds all N docs from scratch on every single call
+  -- doc embeddings should be computed once and cached, only the question
+  needs embedding per call; cost/latency scales badly as docs and turns grow.
+  (2) No faithfulness constraint in the system prompt ("answer only from the
+  provided doc, say so if it's not covered") -- the photo-hallucination above
+  would be a natural first eval case for this once M8 (deliberately last) is
+  reached. (3) top-k hardcoded at 1 -- discussed fixed-k vs similarity
+  threshold vs retrieve-then-rerank as the three real production options,
+  but none implemented; not needed at 3-doc scale, revisit if corpus grows.
+
+  Also covered explicitly per learner's own tangent, correctly redirected back
+  to the exercise each time: max/min/sorted/list.sort/filter as the family of
+  built-ins sharing the key= convention; lambda restricted to single
+  expressions vs full def needing statements.
+
+  Learner asked several career/salary/frontier-lab-odds questions mid-session
+  (including sharing their actual resume: 4 yrs experience, Java/Go, already
+  shipping A2A/OASF/LangGraph multi-agent work at OpenText in production).
+  Gave one honest answer (no guaranteed frontier-lab odds, no invented
+  percentage/salary number) and redirected to the exercise each time,
+  consistent with career-mode rule (say it once, redirect to work). Worth
+  noting for future sessions: this learner is NOT a from-zero beginner --
+  already has real production multi-agent/distributed-systems experience: this
+  curriculum is filling the "built the loop and RAG from scratch, understands
+  the internals" gap specifically, not teaching agents as a wholly new
+  concept. Frame future sessions accordingly -- can move faster on concepts
+  they already use at work (orchestration, isolation), slower on Python
+  fundamentals and code-editing discipline (still a real, repeatedly observed
+  gap -- see below).
+
+  FEEDBACK PATTERN (repeated, 3rd+ occurrence): learner does not isolate
+  variables when testing (dropped 3 of 4 turns while testing an unrelated
+  change earlier this session) and needs literal line-by-line instructions
+  rather than working from a design description. Improving on one dimension:
+  self-corrected the embeddings-vs-context-stuffing question without being
+  told the answer, unprompted -- so conceptual reasoning is ahead of
+  execution discipline right now. Keep giving literal snippets; keep pushing
+  back when a design question is answerable by the learner's own reasoning
+  before giving the answer.
+
+NEXT: M9 -- Production hardening (approval gate + malformed tool-output
+handling on step4_orchestrator.py -- this was the actual next module before
+the M6/M7 detour above; still valid, pick up there). Also carry forward the
+3 production gaps in the RAG code above (embedding caching, faithfulness
+constraint, top-k strategy) as real backlog items, not urgent at current
+scale.

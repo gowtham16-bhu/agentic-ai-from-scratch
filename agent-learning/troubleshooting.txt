@@ -1,0 +1,13 @@
+Troubleshooting Guide
+
+Error E-204 indicates the payment gateway timed out before confirming the charge. This
+usually resolves itself; ask the customer to wait 5 minutes and check their bank
+statement before retrying, since retrying immediately can cause a duplicate charge.
+
+Error E-317 indicates the shipping address failed carrier validation, most commonly a
+missing apartment/unit number or an unrecognized postal code. Ask the customer to
+re-enter their address exactly as it appears on a recent piece of mail.
+
+Error E-450 indicates the account was auto-locked after 5 failed login attempts within
+10 minutes. This is a 30 minute automatic lockout; no manual unlock is available, and
+raising a ticket will not shorten it.
