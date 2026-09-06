@@ -117,12 +117,12 @@ user says "no, I meant X", that is a labelled example about them specifically.
 
 | Layer | Options, worst → best | Status |
 |---|---|---|
-| Chunking | fixed-size → recursive → semantic → **contextual retrieval** | ✗ |
-| Search | vector only → **hybrid (BM25 + vector, RRF fusion)** | ✗ |
-| Reranking | cross-encoder on the top 20 — usually the single biggest quality win | ✗ |
-| Query expansion | 3 phrasings, search all, dedupe | ✗ |
-| Groundedness | "answer ONLY from context, else say not found" | ✗ |
-| Citations | every claim maps to a chunk id | ✗ |
+| Chunking | fixed-size → recursive → semantic → **contextual retrieval** | ✔ (paragraph-based, min-length filtered) |
+| Search | vector only → **hybrid (BM25 + vector, RRF fusion)** | ✔ (built for learning; 4 real tests found vector-only sufficient here) |
+| Reranking | cross-encoder on the top 20 — usually the single biggest quality win | ✔ (LLM-as-reranker on Ollama, not a real cross-encoder) |
+| Query expansion | 3 phrasings, search all, dedupe | ✔ |
+| Groundedness | "answer ONLY from context, else say not found" | ✔ |
+| Citations | every claim maps to a chunk id | ✔ |
 
 **The eval that matters: measure retrieval and answer quality SEPARATELY.**
 ```
@@ -590,7 +590,7 @@ Repo: https://github.com/gowtham16-bhu/agentic-ai-from-scratch
 | 3 | **The loop, deeply** | **◐ current** | 1 of 4 termination conditions; no checkpoint; no compaction |
 | 4 | Memory systems | ◐ | episodic only; no bi-temporal |
 | 5 | Context & caching | ✗ | never budgeted or measured a cache hit rate |
-| 6 | RAG (text) | ✗ | |
+| 6 | RAG (text) | ✔ | none — all 7 sub-items (chunking, hybrid, rerank, query expansion, groundedness, citations, top-k) built and verified |
 | 7 | Multimodal RAG & ingestion | ✗ | |
 | 8 | Evals & CI | ◐ | 5 cases (bar: 20); no CI; never refused to ship on a dropped eval |
 | 9 | Production hardening | ◐ | tracing + kill switch ✔; no cost/token tracking, no guardrails, no approval gate |

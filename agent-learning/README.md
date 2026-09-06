@@ -61,6 +61,19 @@ paragraph-splitting the multi-topic ones.
    alone. Honest finding: `nomic-embed-text` is more robust than assumed, and
    hybrid search is not empirically justified at this corpus size — it's here as
    a working, understood mechanism, not because the data needed it.
+6. **Re-ranking** — a second, more expensive pass over the top-10 RRF candidates:
+   an LLM scores each candidate's relevance 1-10, re-sorted to the final top-3.
+   Standing in for a real cross-encoder (`ms-marco-MiniLM`, Cohere Rerank), which
+   is what production actually uses at scale — an LLM call per candidate does
+   not scale to real traffic, it's the prototyping version of the mechanic.
+7. **Query expansion** — generate 2 alternate phrasings of the question, retrieve
+   for all 3 (never replacing the original), union the results, rerank against
+   the original question. Attacks recall, not ranking: catches cases where the
+   right document never made the shortlist under one specific phrasing.
+8. **Citations** — every retrieved chunk is labeled with its own key
+   (`[products.txt#25]`) before being handed to the model, with an explicit
+   system-prompt instruction to cite sources. Verified the model's citations
+   are accurate, not decorative.
 
 **A real bug worth naming**, because it's the kind that's genuinely hard to catch:
 passing a *list* of tokens into `ollama.embed(input=...)` doesn't error — Ollama
@@ -76,7 +89,8 @@ reading the code.
   yet fixed.
 - `retrieve()` re-embeds every document on every call — doc embeddings should be
   cached once; only the question needs embedding per call.
-- No re-ranking, query expansion, or citations yet (M6's remaining items).
+- Reranking uses a full LLM call per candidate — real production would swap in a
+  dedicated cross-encoder model for this to work at scale.
 - No CI, no automated eval gate on this file yet (eval work deliberately pushed
   to the end of the curriculum sequence).
 

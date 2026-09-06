@@ -748,3 +748,89 @@ the M6/M7 detour above; still valid, pick up there). Also carry forward the
 3 production gaps in the RAG code above (embedding caching, faithfulness
 constraint, top-k strategy) as real backlog items, not urgent at current
 scale.
+
+- 2026-09-06 -- M6 (RAG, properly) FULLY CLOSED. Learner asked to complete all
+  6 canonical sub-items (chunking, hybrid search, reranking, query expansion,
+  groundedness, citations) rather than stop at groundedness, correctly citing
+  the concept-map table as the standard to hold to. All 6 built and verified
+  with real evidence, on top of the earlier groundedness/top-k work:
+
+  1. Hybrid search (BM25 + RRF): built for LEARNING, explicitly acknowledged by
+     learner as not empirically justified here -- 4 real adversarial tests
+     (nonsense promo code, near-duplicate error codes, 50-doc near-duplicate
+     product catalog) all had vector-only search succeed anyway. Honest,
+     logged finding: nomic-embed-text is more robust than assumed; tutor's own
+     predictions were wrong twice. Real bug found building this: passing a
+     LIST of tokens into ollama.embed(input=...) silently batch-embeds each
+     token instead of erroring -- collapsed every cosine score to the
+     embedding of a single word ("what"). Root-caused via before/after score
+     comparison, not code reading -- a genuinely hard-to-spot production bug.
+  2. Reranking: LLM-as-reranker (llama3.2 scoring each candidate 1-10),
+     substituting for a real cross-encoder since only Ollama is available.
+     Tutor gave an explicit cost/latency/accuracy trade-off table clarifying
+     this is the prototyping version -- real production uses a small dedicated
+     model (MiniLM, Cohere Rerank), not a full LLM call per candidate,
+     because LLM-per-candidate does not scale. Learner correctly reasoned
+     through bi-encoder vs cross-encoder mechanics (separate-embed-then-compare
+     vs read-question-and-document-together) after two clarification passes.
+  3. Query expansion: generate 2 alternate phrasings, run retrieval for all 3,
+     union with a Python `set`, rerank against the original question. Required
+     extracting existing RRF logic into a new `score_candidates()` function --
+     learner did this extraction correctly on the first real attempt after
+     initially asking for a full snippet three+ times in a row (logged below).
+  4. Citations: label each retrieved chunk with its key before concatenating
+     (`[products.txt#25] ...`), instruct the system prompt to cite sources.
+     Verified: model's real answer correctly cited [products.txt#25], the
+     true source, not decorative.
+
+  REAL BUGS FOUND AND FIXED BY LEARNER TODAY (evidence-driven debugging, not
+  guessing): docs[i] vs i in a join (returning keys instead of text) · BM25
+  index built before chunking, causing a KeyError · shadowing the `sorted`
+  builtin by naming a variable `sorted` · a misplaced debug print reading a
+  dict before it was populated · a tokenizer mismatch (naive .split() left
+  "PX-125?" glued to punctuation, never matching "PX-125") · a missing top-10
+  slice before reranking (defeated cost savings, made 62 LLM calls instead of
+  10) · a "/n/n" typo (forward slash, not a newline escape) · a missing
+  opening bracket in a citation format string.
+
+  FEEDBACK PATTERN, IMPORTANT, addressed directly in-session: learner asked
+  the tutor to just write code for them roughly 6-8 times across this single
+  session (up from the earlier-logged pattern of "needs literal instructions").
+  Tutor held the line on all but one (the ollama.embed list-input bug, an
+  exception made explicitly given session length and the bug's genuine
+  obscurity -- logged, not a habit). Every other time, when the learner
+  actually attempted the code after being pushed back to, they got it
+  correct, often on the first try (RRF rank dicts, the chunking reorder fix,
+  the regex parser with try/except, the score_candidates extraction). This is
+  strong evidence the block is fatigue/frustration under a very long session,
+  not a real skill gap -- tutor named this directly rather than either caving
+  repeatedly or refusing rigidly. Watch for this pattern recurring in
+  future long sessions; the fix that worked was naming it plainly and asking
+  what's actually blocking them, not repeating the same refusal.
+
+  Also mid-session: learner correctly caught a real architecture mistake in a
+  tutor-provided example (order-status lookup for a specific customer used as
+  a static RAG document) -- correctly identified this as dynamic, per-customer,
+  transactional data that belongs behind a tool/DB call, not embedded into a
+  static corpus. Tutor acknowledged the error and rebuilt the example around
+  genuinely static content (a troubleshooting/error-code KB) instead.
+
+  Session also produced: README.md (project overview, RAG build story with
+  real numbers, known gaps section), committed and pushed to
+  github.com/gowtham16-bhu/agentic-ai-from-scratch (commit eb686d5, plus this
+  session's closing commit). CONCEPT-MAP.md's Module 6 row and all 6 Retrieval
+  sub-item rows updated from ✗ to ✔ with real verification notes, not just
+  marked done.
+
+  STATUS: M6 (RAG, properly) fully complete, all sub-items verified. M7
+  (multimodal RAG/ingestion) explicitly NOT started -- no real document types
+  beyond plain .txt exist yet in the project, same "don't build a fake
+  exercise" discipline applied earlier to M6/M7's original corpus decision.
+
+NEXT: M9 -- Production hardening (approval gate + malformed tool-output
+handling on step4_orchestrator.py) is the actual next module in canonical
+order. Real backlog carried forward, not yet fixed: hardcoded model string
+(`model = "llama3.2"` in step8_context_budget.py, should be config-resolved
+by role per Module 11's runtime rules) · embedding re-computation on every
+retrieve() call (should cache doc embeddings once) · no license chosen for
+the repo yet.

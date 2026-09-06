@@ -9,7 +9,7 @@ def tokenize(text):                    # a function YOU write, using re.findall 
 
 
 model ="llama3.2"
-SYSTEM_PROMPT = "You are an ecommerce support assistant. Be concise.Answer only using the provided document. If the document doesn't cover something, say so — do not invent details"
+SYSTEM_PROMPT = "You are an ecommerce support assistant. Be concise.Answer only using the provided document. If the document doesn't cover something, say so — do not invent details, After each factual claim, cite its source in brackets, e.g. [store_policy.txt]."
 enc = tiktoken.get_encoding("cl100k_base")
 
 
@@ -47,14 +47,39 @@ corpus_tokens = [tokenize(docs[k]) for k in doc_keys]
 bm25 = BM25Okapi(corpus_tokens)
 
 
+
+def rerank(question, candidate_keys, docs, model):
+    """candidate_keys: the top-10 (or 20) keys from RRF. Returns re-sorted top-3."""
+    scores = {}
+    for key in candidate_keys:
+        prompt = f"Question: {question}\nDocument: {docs[key]}\nRate relevance 1-10, output only the number."
+        response = ollama.chat(model=model, messages=[{"role": "user", "content": prompt}])
+        
+        match_text= re.search(r"\d+",response["message"]["content"]) 
+        
+        if match_text:
+            scores[key] = int(match_text.group())
+        else:
+            scores[key] = 0
+
+        
+        
+        # parse response into a number -- this will need int() or float() on the reply text, which may not always be clean
+    top_sorted = sorted(scores,key= lambda x:scores[x] ,reverse=True) 
+    top_3 = top_sorted[:3]  # same sorted()+lambda pattern you've used three times today
+    return top_3
+
 def cosine_similarity(a, b):
     dot = sum(x * y for x, y in zip(a, b))
     mag_a = sum(x * x for x in a) ** 0.5
     mag_b = sum(y * y for y in b) ** 0.5
     return dot / (mag_a * mag_b)
 
-def retrieve(question, docs):
-    """docs: dict like {filename: text}. Returns the single best-matching doc's text."""
+
+def score_candidates(question, docs, doc_keys, bm25) -> list[str]:
+    """Everything currently inside retrieve() up through getting top-10 RRF keys.
+    Returns the top-10 list. Move your existing cosine+BM25+RRF code (lines ~68-109) into here."""
+    ...
     question_res = ollama.embed(model="nomic-embed-text",input=question)  # embed the question — one ollama.embed call, get ["embeddings"][0]
     question_vec = question_res["embeddings"][0]
     scores = {}
@@ -84,12 +109,27 @@ def retrieve(question, docs):
     rrf_score ={}
     for k in docs:
         rrf_score[k] = 1/(60+cosine_rank[k]) +1/(60+bm25_rank[k])
-
+    
     rrf_score_sort   = sorted(rrf_score,key= lambda k:rrf_score[k],reverse=True )
-    top_n = rrf_score_sort[:3]
-    print(top_n)
-    # print(f"[retrieved: {best_filename}, score={scores[best_filename]:.3f}]")
-    return "".join(docs[i] for i in top_n)
+    return rrf_score_sort[:10]
+
+def expand_query(question, model) -> list[str]:
+    prompt = f"Generate 2 alternate phrasings of this question, one per line, no numbering: {question}"
+    response = ollama.chat(model=model, messages=[{"role": "user", "content": prompt}])
+    return response["message"]["content"].split("\n")   # 2 strings, one per line
+
+def retrieve(question, docs):
+    alternates = expand_query(question, model)
+    all_questions = [question] + alternates    # original + 2 alternates = 3 total
+
+    combined_keys = set()
+    for q in all_questions:
+        top_10 = score_candidates(q, docs, doc_keys, bm25)
+        combined_keys = combined_keys | set(top_10)
+
+    top_n = rerank(question, list(combined_keys), docs, model)   # rerank against the ORIGINAL question, not the alternates
+    return "\n\n".join(f"[{i}] {docs[i]}" for i in top_n)
+    
 
 def read_file() -> str:
     policy_text =""
