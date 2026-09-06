@@ -91,6 +91,9 @@ reading the code.
   cached once; only the question needs embedding per call.
 - Reranking uses a full LLM call per candidate — real production would swap in a
   dedicated cross-encoder model for this to work at scale.
+- Citations expose the internal chunk ID (`products.txt#25`) directly to the
+  user — meaningless to a real customer. Needs a lookup mapping each chunk key
+  to a human-readable label before it reaches the final answer.
 - No CI, no automated eval gate on this file yet (eval work deliberately pushed
   to the end of the curriculum sequence).
 
