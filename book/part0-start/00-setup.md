@@ -6,6 +6,9 @@
 **You will learn:** what to install, how to keep costs at zero while learning, how to
 organize your code, and how to study so you can *explain and build*, not just recognize.
 
+**Where this fits:** the starting point. Every later chapter assumes this lab and this
+study method.
+
 ---
 
 ## 1. The idea in plain words
@@ -37,7 +40,7 @@ mkdir agent-lab && cd agent-lab
 python3 -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install --upgrade pip
-pip install ollama pydantic httpx tiktoken rank_bm25 python-dotenv
+pip install ollama pydantic httpx tiktoken rank_bm25 numpy python-dotenv
 ```
 
 > **Faster option:** [`uv`](https://docs.astral.sh/uv/) is a much faster package manager.

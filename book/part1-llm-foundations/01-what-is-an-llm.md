@@ -8,6 +8,12 @@ RLHF, DPO, Constitutional AI, RL with verifiable rewards), the difference betwee
 instruct and reasoning models, and three facts that shape every system you build:
 **LLMs are stateless, have a knowledge cutoff, and are probabilistic.**
 
+**Where this fits:** builds on [Ch 00](../part0-start/00-setup.md). The three facts above
+drive the rest of the book: *stateless* → context and memory (Ch 15, 16); *knowledge
+cutoff* → tools and retrieval (Ch 11, 17–23); *probabilistic* → sampling, hallucination
+and evals (Ch 04, 07, 33). The training stages return in reasoning (Ch 24) and
+fine-tuning (Ch 40).
+
 ---
 
 ## 1. The idea in plain words
@@ -119,7 +125,7 @@ but it fails in non-human ways (e.g. miscounting letters in a word, see Ch 02).
 | **Reasoning model** | Instruct + RL on verifiable tasks; produces "thinking" tokens before the answer. | Hard multi-step problems: planning, math, code, complex analysis. More expensive and slower. |
 
 Many current models are **hybrid**: one model where you turn thinking on/off or set a
-thinking **budget** / **effort** level per request (Ch 08, Ch 18).
+thinking **budget** / **effort** level per request (Ch 08, Ch 24).
 
 ---
 
@@ -176,7 +182,7 @@ print("Call 3 (with history):", r3["message"]["content"])    # now it knows
 **The lesson:** the model has no memory between calls. A "conversation" is an illusion
 **you** create by re-sending the whole history every time. This has a cost: turn 10 sends
 turns 1–9 again (Ch 03). It also means *you* own the state — which is why memory
-(Ch 16) and checkpoints (Ch 20) are your job, not the model's.
+(Ch 16) and checkpoints (Ch 26) are your job, not the model's.
 
 ### 4.3 Next-token prediction by hand: a tiny language model
 
@@ -228,9 +234,9 @@ previous *hundreds of thousands* of tokens" — but the generation loop is the s
 |---|---|---|---|
 | **Stateless** | Long chats get slow and expensive; the model "forgets" early turns when history is trimmed | Token count per turn keeps growing (Ch 03) | Context engineering (Ch 15), memory (Ch 16), caching (Ch 12) |
 | **Knowledge cutoff** | Confident answers about outdated prices, policies, APIs | Evals with questions about recent facts | Give fresh data via tools (Ch 11) and RAG (Ch 17); put today's date in the prompt when relevant |
-| **Probabilistic** | Same input → different outputs; flaky tests | Run the same eval case several times (pass^k, Ch 27) | Lower temperature for deterministic tasks (Ch 04), structured output (Ch 10), verification |
+| **Probabilistic** | Same input → different outputs; flaky tests | Run the same eval case several times (pass^k, Ch 33) | Lower temperature for deterministic tasks (Ch 04), structured output (Ch 10), verification |
 | **Trained to please** | Agrees with a wrong user claim (sycophancy) | Eval cases where the user is confidently wrong | Prompt: "correct the user if they are wrong"; verify with tools |
-| **The model changes under you** | Provider updates a model alias; behavior shifts; "it worked last week" | Record the exact model ID on every call (Ch 28) | Pin exact model versions; re-run evals before switching |
+| **The model changes under you** | Provider updates a model alias; behavior shifts; "it worked last week" | Record the exact model ID on every call (Ch 34) | Pin exact model versions; re-run evals before switching |
 
 ---
 

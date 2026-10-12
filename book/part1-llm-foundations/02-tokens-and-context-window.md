@@ -8,6 +8,11 @@ count differently, why non-English text costs more, what chat templates and spec
 are, what the context window is, and why quality drops in long contexts (**context rot**,
 **lost in the middle**).
 
+**Where this fits:** builds on [Ch 01](01-what-is-an-llm.md) (the model reads tokens, one
+step at a time). Tokens are the unit of cost and latency (Ch 03), the n² attention cost
+explains long-context pain (Ch 05), and the context window is the budget that context
+engineering (Ch 15) and retrieval (Ch 17–19) manage.
+
 ---
 
 ## 1. The idea in plain words
@@ -33,7 +38,7 @@ Rough rules for English:
 | 1 token | ~4 characters, ~¾ of a word |
 | 100 words | ~130–150 tokens |
 | 1 page of text | ~500–800 tokens |
-| 1 page as an **image** | ~1,500–2,500 tokens (Ch 35) |
+| 1 page as an **image** | ~1,500–2,500 tokens (Ch 21, Ch 41) |
 | Code | more tokens per line than prose (symbols, indentation) |
 
 ---
@@ -294,7 +299,7 @@ truncated your input — raise `num_ctx`.)
 3. The tokenizer splits Tamil script into many more tokens for the same meaning, so every
    request has more input and output tokens.
 4. Lost-in-the-middle (and context rot). Fixes: retrieve only the relevant section (RAG,
-   Ch 17) or agentic navigation (Ch 17); put the key rule near the start or end; use a
+   Ch 17) or agentic navigation or PageIndex-style tree search (Ch 19); put the key rule near the start or end; use a
    smaller, focused context.
 5. The stop/finish reason (`stop_reason`, `finish_reason`, Ollama's `done_reason`) — e.g.
    `max_tokens` / `length` means it was truncated.
