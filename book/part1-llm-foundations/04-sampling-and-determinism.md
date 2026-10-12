@@ -91,8 +91,11 @@ small differences happen because:
 So: **temperature 0 makes output *much more* consistent, not *guaranteed* identical.**
 Design your system and tests to tolerate variation (Ch 33: run evals several times).
 
-> Some reasoning-model APIs restrict or ignore sampling parameters when thinking is
-> enabled. Check your provider's docs before relying on temperature.
+> **Hosted reasoning models increasingly don't let you set sampling at all.** For example,
+> several current Claude models reject non-default `temperature` / `top_p` / `top_k` with an
+> error and expose an **effort** level (low → max) as the control instead. Everything in
+> this chapter still explains what happens inside, and it applies fully to models you run
+> yourself (Ollama, vLLM — Ch 39). Check your provider's docs before relying on temperature.
 
 ### Recommended starting points
 

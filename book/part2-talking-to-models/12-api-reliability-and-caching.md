@@ -1,0 +1,524 @@
+# Chapter 12 — API reliability and caching
+
+> In production, model calls time out, get rate-limited, fail with 5xx errors, and cost
+> money every time. Wrap every call in **timeouts, retries with backoff, fallbacks, and a
+> circuit breaker**, and use **prompt caching** to cut cost and latency.
+
+**You will learn:** which errors to retry and which not to, timeouts, exponential backoff
+with jitter, `Retry-After`, rate limits (RPM/TPM), idempotency, circuit breakers,
+fallback chains, streaming, batch APIs, and prompt caching in depth (mechanics, provider
+styles, the ordering rule, silent invalidators, measuring hit rate). You'll build `llm.py`,
+the provider-agnostic client used for the rest of the book.
+
+**Where this fits:** builds on cost/latency (Ch 03), the KV cache (Ch 05 — prompt caching
+*is* a reused KV cache), model roles (Ch 08) and tools (Ch 11). The agent loop (Ch 14)
+calls this client; the LLM gateway (Ch 32) moves these features into a shared service;
+cost optimization (Ch 37) and deployment at scale (Ch 38) build on rate limits and
+caching.
+
+---
+
+## 1. The idea in plain words
+
+An LLM API is a remote, shared, rate-limited, sometimes-overloaded service. Treat it like
+any flaky dependency:
+
+- **Bound the wait** (timeouts).
+- **Retry the right failures** (with backoff, never in a tight loop).
+- **Stop hammering a dead dependency** (circuit breaker).
+- **Have a plan B** (fallback model/provider, cached answer, honest error).
+- **Don't pay twice for the same work** (prompt caching, idempotency).
+
+---
+
+## 2. Analogy
+
+**Calling a busy customer-service line.** If it's busy, you don't redial 100 times per
+second — you wait a bit longer each time (backoff), and if everyone waits exactly 30 seconds
+you all collide again, so you each wait a random amount (jitter). If the line has been dead
+for an hour, you stop calling and try another branch (circuit breaker + fallback). And if
+you're told "call back in 2 minutes", you do exactly that (`Retry-After`).
+
+---
+
+## 3. How it works
+
+### 3.1 Which errors to retry
+
+| Error | Retry? | Why / what to do |
+|---|---|---|
+| Connection error, timeout | ✅ | Transient network problem |
+| **429** rate limited | ✅ | Wait — honor `Retry-After` if present |
+| **408**, **409** | ✅ | Transient (timeout / conflict) |
+| **5xx** (500, 502, 503, overloaded) | ✅ | Provider-side, usually transient |
+| **400** bad request | ❌ | Your request is wrong (bad schema, prompt too long) — retrying won't help; fix or degrade |
+| **401 / 403** | ❌ | Credentials or permissions — alert a human |
+| **404** | ❌ | Wrong model ID or endpoint — config bug |
+| **413** / context too long | ❌ | Trim the input (Ch 15), then call again — that's a new request, not a retry |
+
+**Watch for retry amplification:** if the SDK retries 2×, your client retries 3×, and the
+gateway retries 3×, one failure becomes 2×3×3 = 18 calls. Retry in **one** layer. (Official
+SDKs often retry by default — e.g. the Anthropic Python SDK retries connection errors, 408,
+409, 429 and 5xx twice. Either rely on that or set it to 0 and own retries yourself.)
+
+### 3.2 Timeouts
+
+- **Connect timeout** (short, seconds) — can't reach the server.
+- **Read timeout** — no bytes for too long. For streaming, this is the gap between chunks.
+- **Overall deadline** for the whole task, across all retries. A user-facing request that has
+  already used 25 of its 30 seconds shouldn't start a 60-second retry.
+
+Long generations (big outputs, reasoning models) can legitimately take minutes; use
+**streaming** for those so a read timeout measures "silence", not "total length".
+
+### 3.3 Exponential backoff with full jitter
+
+```
+attempt 1 fails → sleep random(0, base × 2¹)      e.g. 0–2s
+attempt 2 fails → sleep random(0, base × 2²)      e.g. 0–4s
+attempt 3 fails → sleep random(0, base × 2³)      e.g. 0–8s   (capped at max_delay)
+if the server says Retry-After: N → sleep N instead
+```
+
+Randomness (jitter) spreads clients out so they don't retry in synchronized waves.
+
+### 3.4 Rate limits
+
+Providers limit you on several axes at once:
+
+| Limit | Meaning |
+|---|---|
+| **RPM** | Requests per minute |
+| **TPM / ITPM / OTPM** | Tokens per minute (sometimes input and output separately) |
+| **Concurrent requests** | Simultaneous in-flight calls |
+| **Daily / monthly spend** | Budget caps |
+
+Responses often include headers telling you remaining quota and when it resets. In a busy
+service you **shape traffic before** hitting limits: a client-side token bucket, a queue, and
+per-tenant quotas at the gateway (Ch 32). Note: some providers don't count cache reads against
+input-token limits — another reason caching raises effective throughput.
+
+### 3.5 Idempotency
+
+Retrying an LLM call itself has no side effects (it just costs money). The danger is
+**tools with side effects** (Ch 11): a retried "create refund" must not refund twice. Give
+every write an **idempotency key** generated by your code (e.g. `conversation_id + step +
+action`), and make the backend reject duplicates.
+
+### 3.6 Circuit breaker
+
+```
+            failures ≥ threshold
+   CLOSED ───────────────────────────► OPEN  (fail fast, don't call; use fallback)
+     ▲                                   │
+     │ trial call succeeds                │ after cool-down period
+     │                                   ▼
+     └──────────────────────────── HALF-OPEN (allow one trial call)
+                trial call fails → back to OPEN
+```
+
+Without it, a provider outage turns every request into a slow timeout, piling up threads and
+queues. With it, you fail over to the next provider within milliseconds.
+
+### 3.7 Fallback chains
+
+From Ch 08: roles resolve to an ordered list of models, ideally across **different
+providers**. On a retryable failure after retries (or an open circuit), move to the next. The
+last resort is a graceful degradation (Ch 38): cached answer clearly labelled, a queued "we'll
+email you", or an honest error with a route to a human — never a stack trace.
+
+Fallback caveat: a different model may need a different prompt and will have a separate
+prompt cache. Run your evals against fallback models too.
+
+### 3.8 Streaming
+
+Streaming (server-sent events) sends tokens as they are generated:
+- Much better **perceived** latency (users see text after TTFT, not after the whole answer).
+- Avoids HTTP timeouts on long outputs.
+- Costs the same.
+- Harder error handling: a stream can fail halfway. Decide: retry from scratch, or show a
+  partial answer with a notice.
+
+### 3.9 Batch APIs
+
+For work that doesn't need an immediate answer (nightly classification, evals, backfills),
+providers offer **batch APIs**: submit thousands of requests, get results within hours, at a
+large discount (commonly ~50%). Results may arrive **in any order** — always match them by
+your own `custom_id`.
+
+### 3.10 Prompt caching in depth
+
+Recall Ch 05: processing a prompt produces a KV cache. **Prompt caching** keeps the KV cache
+of a **prefix** for a few minutes so the next request that starts with the **exact same
+tokens** skips recomputing it.
+
+```
+request 1:  [tools][system prompt][policy docs][user Q1]          → prefix computed, cached
+request 2:  [tools][system prompt][policy docs][history][user Q2] → prefix READ from cache
+                    └──────── identical bytes ─────────┘
+```
+
+**Two provider styles:**
+
+| Style | How | Example |
+|---|---|---|
+| **Explicit breakpoints** | You mark where the cacheable prefix ends | Anthropic `cache_control: {"type": "ephemeral"}` on a block; optional TTL (`"5m"` default, `"1h"`); up to 4 breakpoints; also a top-level automatic mode |
+| **Automatic** | Provider caches long prompt prefixes automatically | OpenAI-style automatic caching; report via `usage.prompt_tokens_details.cached_tokens` |
+
+**Economics (typical shape, check current pricing):** cache **reads** cost a small fraction of
+normal input (often ~10%, lower on some models); cache **writes** may cost a premium (e.g.
+1.25× for a 5-minute TTL, 2× for 1-hour on Anthropic). So caching pays off once a prefix is
+reused even once or twice.
+
+**Minimum size:** prefixes below a model-dependent minimum (hundreds to a few thousand tokens)
+silently don't cache — no error, just zero cache reads.
+
+**The ordering rule — order by increasing volatility:**
+
+```
+tools → system prompt → static documents → few-shot examples → conversation history → current turn
+(never changes)                                                          (changes every request)
+```
+
+**Silent invalidators** — the most common reasons for a low hit rate:
+
+| Invalidator | Fix |
+|---|---|
+| Timestamp / date / request ID near the top of the system prompt | Put dynamic values at the end (in the latest user turn) |
+| `json.dumps(obj)` without `sort_keys=True`, iterating a `set` | Deterministic serialization |
+| Per-user name/ID interpolated into the system prompt | Move user-specific content after the shared prefix |
+| Tool list built dynamically per request | Stable, sorted tool list; defer loading instead (Ch 11) |
+| Switching model mid-conversation | Caches are per model |
+| Conditional sections (`if premium: system += ...`) | Each combination is a separate prefix |
+| N parallel requests with the same new prefix | The cache becomes readable only after the first request starts responding — send one first, then fan out |
+
+**Measure it** — never assume caching works:
+
+```
+Anthropic:  total_input = input_tokens + cache_creation_input_tokens + cache_read_input_tokens
+            hit ratio   = cache_read_input_tokens / total_input
+OpenAI:     hit ratio   = prompt_tokens_details.cached_tokens / prompt_tokens
+```
+
+In a steady multi-turn agent, nearly the whole previous conversation should be read from
+cache each turn. A low ratio means an invalidator, not bad luck. Put an assertion in an
+integration test: "the second identical request reports cache reads > 0".
+
+---
+
+## 4. Code
+
+### 4.1 `llm.py` — the client used for the rest of the book
+
+```python
+# llm.py — provider-agnostic calls with roles, retries, jitter, circuit breaker, fallback, usage
+import random
+import time
+from dataclasses import dataclass, field
+
+@dataclass
+class LLMResponse:
+    text: str
+    tool_calls: list            # [{"id": ..., "name": ..., "arguments": {...}}]
+    model: str                  # the model that actually answered (log this!)
+    input_tokens: int
+    output_tokens: int
+    cached_tokens: int = 0
+    stop_reason: str = ""
+    latency_s: float = 0.0
+    raw: object = None
+
+class RetryableError(Exception):
+    def __init__(self, msg, retry_after=None):
+        super().__init__(msg)
+        self.retry_after = retry_after
+
+class FatalError(Exception):
+    pass
+
+# ---------- providers: translate to/from one common shape ----------
+
+class OllamaProvider:
+    def __init__(self, model):
+        import ollama
+        self.ollama, self.model = ollama, model
+
+    def call(self, system, messages, tools=None, max_tokens=1024):
+        msgs = ([{"role": "system", "content": system}] if system else []) + messages
+        try:
+            r = self.ollama.chat(model=self.model, messages=msgs, tools=tools,
+                                 options={"num_predict": max_tokens})
+        except self.ollama.ResponseError as e:
+            if e.status_code == 429 or e.status_code >= 500:
+                raise RetryableError(str(e))
+            raise FatalError(str(e))
+        except ConnectionError as e:
+            raise RetryableError(str(e))
+        calls = [{"id": f"call_{i}", "name": c["function"]["name"],
+                  "arguments": c["function"]["arguments"]}
+                 for i, c in enumerate(r["message"].get("tool_calls") or [])]
+        return LLMResponse(r["message"]["content"], calls, self.model,
+                           r["prompt_eval_count"] or 0, r["eval_count"] or 0,
+                           stop_reason=r.get("done_reason") or "", raw=r)
+
+class AnthropicProvider:
+    def __init__(self, model):
+        import anthropic
+        self.anthropic = anthropic
+        self.client = anthropic.Anthropic(max_retries=0, timeout=60.0)  # we own retries
+        self.model = model
+
+    def call(self, system, messages, tools=None, max_tokens=1024):
+        a = self.anthropic
+        kwargs = dict(model=self.model, max_tokens=max_tokens, messages=messages,
+                      # cache the stable system prompt (and the tools rendered before it)
+                      system=[{"type": "text", "text": system,
+                               "cache_control": {"type": "ephemeral"}}])
+        if tools:
+            kwargs["tools"] = tools          # Anthropic format: {name, description, input_schema}
+        try:
+            r = self.client.messages.create(**kwargs)
+        except a.RateLimitError as e:
+            raise RetryableError(str(e), e.response.headers.get("retry-after"))
+        except a.APIConnectionError as e:                  # includes timeouts
+            raise RetryableError(str(e))
+        except a.APIStatusError as e:
+            if e.status_code in (408, 409) or e.status_code >= 500:
+                raise RetryableError(str(e))
+            raise FatalError(f"{e.status_code}: {e}")
+        u = r.usage
+        cached = u.cache_read_input_tokens or 0
+        total_in = u.input_tokens + (u.cache_creation_input_tokens or 0) + cached
+        text = "".join(b.text for b in r.content if b.type == "text")
+        calls = [{"id": b.id, "name": b.name, "arguments": b.input}
+                 for b in r.content if b.type == "tool_use"]
+        return LLMResponse(text, calls, self.model, total_in, u.output_tokens, cached,
+                           r.stop_reason, raw=r)
+
+PROVIDERS = {"ollama": OllamaProvider, "anthropic": AnthropicProvider}
+
+# ---------- reliability ----------
+
+@dataclass
+class CircuitBreaker:
+    threshold: int = 3
+    cooldown_s: float = 30.0
+    failures: int = 0
+    opened_at: float | None = None
+
+    def allow(self):
+        if self.opened_at is None:
+            return True
+        return time.monotonic() - self.opened_at >= self.cooldown_s   # half-open trial
+
+    def record(self, ok):
+        if ok:
+            self.failures, self.opened_at = 0, None
+        else:
+            self.failures += 1
+            if self.failures >= self.threshold:
+                self.opened_at = time.monotonic()
+
+ROLES = {   # role -> fallback chain "provider/model" (Ch 08). Put real IDs in config.
+    "fast": ["ollama/llama3.2", "ollama/qwen2.5:3b"],
+    "smart": ["anthropic/claude-sonnet-5-5", "ollama/llama3.2"],
+}
+_breakers: dict[str, CircuitBreaker] = {}
+
+def _with_retries(provider, max_attempts, base_delay, max_delay, deadline, **kw):
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return provider.call(**kw)
+        except RetryableError as e:
+            if attempt == max_attempts:
+                raise
+            delay = float(e.retry_after) if e.retry_after else \
+                random.uniform(0, min(max_delay, base_delay * 2 ** attempt))   # full jitter
+            if time.monotonic() + delay > deadline:
+                raise                                  # don't sleep past the task deadline
+            time.sleep(delay)
+
+def complete(role, messages, system="", tools=None, max_tokens=1024,
+             max_attempts=3, base_delay=0.5, max_delay=8.0, deadline_s=60.0):
+    deadline = time.monotonic() + deadline_s
+    errors = []
+    for target in ROLES[role]:
+        provider_name, model = target.split("/", 1)
+        breaker = _breakers.setdefault(target, CircuitBreaker())
+        if not breaker.allow():
+            errors.append(f"{target}: circuit open")
+            continue
+        start = time.perf_counter()
+        try:
+            resp = _with_retries(PROVIDERS[provider_name](model), max_attempts, base_delay,
+                                 max_delay, deadline, system=system, messages=messages,
+                                 tools=tools, max_tokens=max_tokens)
+            breaker.record(ok=True)
+            resp.latency_s = time.perf_counter() - start
+            return resp
+        except (RetryableError, FatalError, ImportError) as e:
+            breaker.record(ok=False)
+            errors.append(f"{target}: {e}")
+    raise RuntimeError("All models failed for role '%s': %s" % (role, errors))
+
+if __name__ == "__main__":
+    r = complete("fast", [{"role": "user", "content": "Say hi in 3 words."}])
+    print(r.model, "|", r.text, "| in", r.input_tokens, "out", r.output_tokens,
+          f"| {r.latency_s:.2f}s")
+```
+
+Two honest notes about this teaching client:
+1. Tool definitions and tool-result messages still use each provider's own format — a full
+   normalizer is ~100 more lines (that's what gateways and frameworks do, Ch 27, 32).
+2. Breakers here live in one process. Across many servers, share breaker/limit state (e.g.
+   Redis) or put this logic in a gateway.
+
+### 4.2 Find cache invalidators by diffing two rendered prompts
+
+```python
+# cache_lint.py — where do two consecutive requests first differ?
+import json
+from datetime import datetime
+
+def render(system, tools, messages):
+    # same order the provider renders the prompt: tools -> system -> messages
+    return (json.dumps(tools, sort_keys=True) + "\n" + system + "\n"
+            + json.dumps(messages, sort_keys=True, ensure_ascii=False))
+
+def first_divergence(a, b):
+    for i, (x, y) in enumerate(zip(a, b)):
+        if x != y:
+            return i
+    return min(len(a), len(b))
+
+TOOLS = [{"name": "get_order", "description": "Look up one order by ID."}]
+history = [{"role": "user", "content": "Where is A-1043?"}]
+
+bad_1 = render(f"Today is {datetime.now().isoformat()}. You are a support bot.", TOOLS, history)
+bad_2 = render(f"Today is {datetime.now().isoformat()}. You are a support bot.", TOOLS,
+               history + [{"role": "user", "content": "Thanks!"}])
+good_1 = render("You are a support bot.", TOOLS, history)
+good_2 = render("You are a support bot.", TOOLS, history + [{"role": "user", "content": "Thanks!"}])
+
+for name, (a, b) in {"timestamp in system": (bad_1, bad_2), "stable": (good_1, good_2)}.items():
+    i = first_divergence(a, b)
+    print(f"{name:20s} first difference at char {i:5d} of {len(a)}  -> reusable prefix {i / len(a):.0%}")
+```
+
+With the timestamp, the two prompts diverge at the start of the system prompt: only the tool
+definitions before it can be reused. In a real agent everything after that point — system
+prompt, documents, the whole history — is thousands of tokens, all uncacheable on every turn.
+The stable version diverges only at the very end, where the new message is appended.
+
+### 4.3 Measure a real cache hit (needs an Anthropic key)
+
+```python
+# ch12_cache_hit.py
+import anthropic
+
+client = anthropic.Anthropic()
+POLICY = "Acme return policy. " + ("Unworn items within 14 days; damaged items within 60 days. " * 120)
+
+def ask(question):
+    r = client.messages.create(
+        model="claude-haiku-5-5", max_tokens=200,
+        system=[{"type": "text", "text": POLICY, "cache_control": {"type": "ephemeral"}}],
+        messages=[{"role": "user", "content": question}])
+    u = r.usage
+    print(f"uncached={u.input_tokens} cache_write={u.cache_creation_input_tokens} "
+          f"cache_read={u.cache_read_input_tokens}")
+
+ask("How long for unworn items?")   # first call writes the cache
+ask("How long for damaged items?")  # second call should READ the shared policy prefix
+```
+
+---
+
+## 5. Production view
+
+| Signal | Meaning | Action |
+|---|---|---|
+| 429 rate climbing | Near quota | Client-side limiter/queue; request a higher tier; spread across providers |
+| Retries per request rising | Provider degrading | Breaker will trip; alert on fallback rate (Ch 34) |
+| **Fallback rate** rising | A provider is unhealthy | Dashboard + alert — this is one of the four core agent dashboards |
+| p99 latency spikes with retries | Retries eat the user's time budget | Overall deadline; fewer retries for interactive paths |
+| Cache hit ratio dropped after a deploy | Someone added a dynamic field to the prefix | Cache-lint in CI; monitor `cache_read` tokens |
+| Duplicate side effects | Retried writes without idempotency | Idempotency keys on every write tool |
+
+---
+
+## 6. Common mistakes
+
+- Retrying 400 errors (they fail the same way every time).
+- Retrying in a tight loop without backoff and jitter.
+- Retrying at every layer (amplification).
+- No overall deadline, so retries outlive the user's patience.
+- Same-provider-only fallbacks.
+- Assuming caching works without checking the usage fields.
+- Putting `datetime.now()` at the top of the system prompt.
+- Running streaming without handling mid-stream failures.
+
+---
+
+## 7. Practice
+
+**Level 1**
+1. Run `llm.py`. Stop Ollama (`ollama stop llama3.2` or quit the app) and run it again. What
+   error do you get and how long did it take?
+2. Run `cache_lint.py`. Add a third case: tools list built in a different order each call.
+
+**Level 2**
+3. Write a fake provider that fails randomly 50% of the time with `RetryableError` and
+   sometimes returns `retry_after="1"`. Plug it into `PROVIDERS`/`ROLES` and run 50 calls.
+   Count attempts, sleeps, breaker trips and fallbacks. Print a summary.
+4. Add a client-side **token bucket** limiter (N requests per second) in front of `complete()`
+   and show that bursts get smoothed instead of producing 429s.
+
+**Level 3**
+5. Add streaming to `OllamaProvider` (`stream=True`) with an **idle timeout**: if no chunk
+   arrives for X seconds, abort and raise `RetryableError`. Decide and document what happens to
+   partial text.
+6. With a hosted provider, run a 10-turn conversation twice: once with a timestamp in the
+   system prompt, once without. Plot cache-read ratio per turn for both. Put the numbers in
+   your notes — this is the most convincing slide you can show a customer about caching.
+
+---
+
+## 8. Check yourself
+
+1. Which of these should be retried: 400, 401, 429, 503, timeout?
+2. Why add jitter to backoff?
+3. What is retry amplification and how do you avoid it?
+4. Describe the three states of a circuit breaker.
+5. Why does putting the current time at the start of the system prompt destroy caching?
+6. Why should a fallback chain cross providers, and what's one downside of falling back?
+
+<details>
+<summary>Answers</summary>
+
+1. 429, 503 and timeout. Not 400 (fix the request) or 401 (fix credentials).
+2. So many clients that failed at the same moment don't retry at the same moment and cause
+   another overload spike.
+3. Several layers each retrying multiplies the number of calls per failure. Retry in exactly
+   one layer and disable or reduce retries in the others.
+4. Closed (calls flow), open (fail fast after repeated failures), half-open (after a cool-down,
+   allow a trial call; success closes, failure re-opens).
+5. Caching reuses an exact prefix. A value that changes every request at the very start makes
+   every request's prefix different, so nothing after it can be reused.
+6. Provider-wide outages and rate limits take down all of one provider's models. Downside: the
+   fallback model may behave differently (needs its own prompt tuning and evals) and starts with
+   a cold cache.
+
+</details>
+
+---
+
+## 9. Key terms
+
+**retryable vs fatal errors** · **timeout (connect / read / deadline)** · **exponential
+backoff** · **jitter** · **Retry-After** · **retry amplification** · **RPM / TPM** ·
+**token bucket** · **idempotency key** · **circuit breaker** · **fallback chain** ·
+**streaming / SSE** · **batch API** · **prompt caching** · **cache breakpoint** · **TTL** ·
+**cache hit ratio** · **silent invalidator**
+
+Next: [Part 3 — Chapter 13: Workflows vs agents →](../part3-building-agents/13-workflows-vs-agents.md)
