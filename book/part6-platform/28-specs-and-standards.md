@@ -92,7 +92,7 @@ tools), **A2A is horizontal** (connects agents across teams and organizations).
 
 | Spec | Purpose |
 |---|---|
-| **AG-UI** | An open, event-based protocol for streaming agent activity to frontends (messages, tool calls, state updates) over SSE/WebSockets/etc. — about 16 standard event types |
+| **AG-UI** | An open, event-based protocol for streaming agent activity to frontends over SSE/WebSockets/etc.: run lifecycle, text messages, tool calls, state, activity, reasoning and sub-agent events (the 1.0 Python SDK enumerates ~30 types), plus **interrupts** for human approval (Ch 44) |
 | **A2UI** | A format for **agent-generated, updatable UIs**: the agent describes UI components declaratively; the client renders them with its own trusted components |
 | **MCP Apps** | An MCP extension for **interactive UIs for MCP tools** (charts, forms, dashboards) that render inline in compatible chat clients |
 

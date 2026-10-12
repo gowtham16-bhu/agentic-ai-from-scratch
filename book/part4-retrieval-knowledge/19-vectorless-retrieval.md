@@ -331,7 +331,7 @@ def ask(question):
         messages=[{"role": "user", "content": question}])
     u = r.usage
     print(f"[cache read {u.cache_read_input_tokens}, uncached {u.input_tokens}]")
-    return r.content[0].text
+    return "".join(b.text for b in r.content if b.type == "text")   # skip thinking blocks
 ```
 
 With a local model, the equivalent is keeping the model loaded (`keep_alive`) and sending the

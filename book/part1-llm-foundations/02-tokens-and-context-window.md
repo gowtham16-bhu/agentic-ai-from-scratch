@@ -38,7 +38,7 @@ Rough rules for English:
 | 1 token | ~4 characters, ~¾ of a word |
 | 100 words | ~130–150 tokens |
 | 1 page of text | ~500–800 tokens |
-| 1 page as an **image** | ~1,500–2,500 tokens (Ch 21, Ch 41) |
+| 1 page as an **image** | ~1,000–1,600 tokens on many models; up to ~4,800 on high-resolution models (Ch 21, Ch 41) |
 | Code | more tokens per line than prose (symbols, indentation) |
 
 ---
